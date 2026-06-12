@@ -74,16 +74,17 @@ const StreamCard = ({
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
-  const switchCamera = useCallback(() => {
-    const newFacing = facingMode === "user" ? "environment" : "user";
-    setFacingMode(newFacing);
-    import("@/lib/socket").then(({ getSocket }) => {
-      getSocket().emit("surveillance-switch-camera", {
-        conversationId,
-        facingMode: newFacing,
-      });
+const switchCamera = useCallback(() => {
+  const newFacing = facingMode === "user" ? "environment" : "user";
+  setFacingMode(newFacing);
+  console.log("🔄 Switching to:", newFacing);
+  import("@/lib/socket").then(({ getSocket }) => {
+    getSocket().emit("surveillance-switch-camera", {
+      conversationId,
+      facingMode: newFacing,
     });
-  }, [facingMode, conversationId]);
+  });
+}, [facingMode, conversationId]);
 
   return (
     <div
