@@ -37,6 +37,7 @@ const StreamCard = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const facingModeRef = useRef<"user" | "environment">("user");
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +76,8 @@ const StreamCard = ({
   }, []);
 
 const switchCamera = useCallback(() => {
-  const newFacing = facingMode === "user" ? "environment" : "user";
+  const newFacing = facingModeRef.current === "user" ? "environment" : "user";
+  facingModeRef.current = newFacing;
   setFacingMode(newFacing);
   console.log("🔄 Switching to:", newFacing);
   import("@/lib/socket").then(({ getSocket }) => {
@@ -84,7 +86,7 @@ const switchCamera = useCallback(() => {
       facingMode: newFacing,
     });
   });
-}, [facingMode, conversationId]);
+}, [conversationId]);
 
   return (
     <div
