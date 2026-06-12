@@ -20,7 +20,21 @@ const app = express();
 
 app.use(helmet());
 app.use(timeout("120s"));
-app.use(cors({ origin: config.clientUrl, credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowed = [
+      config.clientUrl,
+      "https://nexus-chat-three-delta.vercel.app",
+      "https://nexus-chat-oxqupxkfe-ahmeds-projects-231819ae.vercel.app",
+    ].filter(Boolean);
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
 app.use(requestLogger);
 app.use(morgan(config.nodeEnv === "production" ? "combined" : "dev"));
 app.use(globalLimiter);
