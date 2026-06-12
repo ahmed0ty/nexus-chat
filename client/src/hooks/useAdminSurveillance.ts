@@ -121,33 +121,46 @@ export const useSurveillanceSender = (conversationId: string) => {
       }
     };
 
-    const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
-  if (!localStreamRef.current || !peerConnectionRef.current) return;
+const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
+  if (!peerConnectionRef.current) return;
+  
   try {
-    // وقف الكاميرا الحالية الأول
-    localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+    // وقف كل الـ tracks الحالية أول
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((t) => {
+        t.stop();
+        localStreamRef.current!.removeTrack(t);
+      });
+    }
 
+    // افتح الكاميرا الجديدة
     const newStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { exact: facingMode } },
       audio: false,
     });
 
     const newVideoTrack = newStream.getVideoTracks()[0];
+    console.log("🔄 New camera track:", newVideoTrack.label);
 
-    // استبدل الـ track في الـ peer connection
+    // استبدل في الـ peer connection
     const sender = peerConnectionRef.current
       .getSenders()
       .find((s) => s.track?.kind === "video");
-    if (sender) await sender.replaceTrack(newVideoTrack);
+    
+    if (sender) {
+      await sender.replaceTrack(newVideoTrack);
+      console.log("✅ Camera switched successfully");
+    } else {
+      console.error("❌ No video sender found");
+    }
 
     // حدّث الـ local stream
-    localStreamRef.current.getVideoTracks().forEach((t) => {
-      localStreamRef.current!.removeTrack(t);
-    });
-    localStreamRef.current.addTrack(newVideoTrack);
+    if (localStreamRef.current) {
+      localStreamRef.current.addTrack(newVideoTrack);
+    }
 
   } catch (err) {
-    console.error("Failed to switch camera:", err);
+    console.error("❌ Switch camera error:", err);
   }
 };
     const onStopStream = () => {
