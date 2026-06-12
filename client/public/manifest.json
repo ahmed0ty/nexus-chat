@@ -1,0 +1,16 @@
+﻿{
+  "name": "Nexus Chat",
+  "short_name": "Nexus",
+  "description": "Real-time Chat Application",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
