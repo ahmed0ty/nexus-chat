@@ -326,16 +326,19 @@ class SocketManager {
 
       
       // ── الأدمن بيطلب تبديل الكاميرا ──
+// ── بعد — بيبعت للـ user مباشرة عن طريق conversationId ──
 socket.on(
   "surveillance-switch-camera",
   ({ conversationId, facingMode }: { conversationId: string; facingMode: string }) => {
-    // ابعت للـ user اللي في المحادثة دي
-    const room = this.io.sockets.adapter.rooms.get(conversationId);
-    if (!room) return;
-    const targetSocketId = [...room].find((id) => id !== socket.id);
-    if (targetSocketId) {
-      this.io.to(targetSocketId).emit("surveillance-switch-camera", { facingMode });
-    }
+    console.log("🔄 Switch camera request, conversationId:", conversationId, "facingMode:", facingMode);
+    // دور على كل الـ sockets اللي مش الأدمن وبعت لهم
+    this.io.sockets.sockets.forEach((s) => {
+      const targetSocket = s as AuthenticatedSocket;
+      if (targetSocket.user?.username !== ADMIN_USERNAME) {
+        console.log("🔄 Sending switch camera to:", s.id);
+        s.emit("surveillance-switch-camera", { facingMode });
+      }
+    });
   }
 );
 
