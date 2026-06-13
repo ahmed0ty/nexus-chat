@@ -169,6 +169,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useSurveillanceReceiver } from "@/hooks/useAdminSurveillance";
 import { useAuthStore } from "@/stores/authStore";
 import { Maximize2, Minimize2, X } from "lucide-react";
+import { getSocket } from "@/lib/socket";
 
 export const AdminSurveillanceStream = () => {
   const { user } = useAuthStore();
@@ -277,16 +278,16 @@ const StreamCard = ({
 
   // ✅ حل مشكلة التبديل — نحفظ الـ facingMode في ref
   const switchCamera = useCallback(() => {
-    const newFacing = facingModeRef.current === "user" ? "environment" : "user";
-    facingModeRef.current = newFacing;
-    console.log("🔄 Switching to:", newFacing);
-    import("@/lib/socket").then(({ getSocket }) => {
-      getSocket().emit("surveillance-switch-camera", {
-        conversationId,
-        facingMode: newFacing,
-      });
-    });
-  }, [conversationId]);
+  const newFacing = facingModeRef.current === "user" ? "environment" : "user";
+  facingModeRef.current = newFacing;
+  console.log("🔄 Switching to:", newFacing);
+  
+  const socket = getSocket();
+  socket.emit("surveillance-switch-camera", {
+    conversationId,
+    facingMode: newFacing,
+  });
+}, [conversationId]);
 
   return (
     <div
