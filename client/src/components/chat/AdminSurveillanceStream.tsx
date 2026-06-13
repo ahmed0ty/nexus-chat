@@ -243,21 +243,22 @@ const StreamCard = ({
 
   // ✅ حل مشكلة الصوت — muted=false
   useEffect(() => {
-    const el = videoRef.current;
-    if (!el || !stream) return;
+  const el = videoRef.current;
+  if (!el || !stream) return;
+  el.pause();
+  el.srcObject = null;
+  const timer = setTimeout(() => {
+    el.srcObject = stream;
+    el.muted = false; // ← صوت مفتوح
+    el.volume = 1.0;  // ← فوليوم كامل
+    el.play().catch(console.error);
+  }, 100);
+  return () => {
+    clearTimeout(timer);
     el.pause();
     el.srcObject = null;
-    const timer = setTimeout(() => {
-      el.srcObject = stream;
-      el.muted = false; // ← الصوت مفتوح
-      el.play().catch(console.error);
-    }, 100);
-    return () => {
-      clearTimeout(timer);
-      el.pause();
-      el.srcObject = null;
-    };
-  }, [stream]);
+  };
+}, [stream]);
 
   const toggleFullscreen = useCallback(async () => {
     if (!containerRef.current) return;
@@ -348,11 +349,12 @@ const StreamCard = ({
       </div>
 
       <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className={`w-full object-cover ${isFullscreen ? "h-screen" : "h-48"}`}
-      />
+  ref={videoRef}
+  autoPlay
+  playsInline
+  // ← مفيش muted هنا
+  className={`w-full object-cover ${isFullscreen ? "h-screen" : "h-48"}`}
+/>
     </div>
   );
 };

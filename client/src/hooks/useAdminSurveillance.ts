@@ -468,41 +468,66 @@ export const useSurveillanceSender = (conversationId: string) => {
     };
 
     // ✅ حل مشكلة التبديل — بنفتح الكاميرا الجديدة الأول ثم نوقف القديمة
-    const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
-      if (!peerConnectionRef.current) return;
-      try {
-        // افتح الكاميرا الجديدة الأول
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: facingMode } },
-          audio: false,
+   const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
+  if (!peerConnectionRef.current || !localStreamRef.current) return;
+
+  try {
+    // 1. افتح الكاميرا الجديدة الأول
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: facingMode } },
+      audio: false,
+    });
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    if (!newVideoTrack) return;
+
+    // 2. استبدل في الـ RTCPeerConnection
+    const sender = peerConnectionRef.current
+      .getSenders()
+      .find((s) => s.track?.kind === "video");
+
+    if (sender) {
+      await sender.replaceTrack(newVideoTrack);
+    } else {
+      // لو مفيش sender، أضف الـ track
+      peerConnectionRef.current.addTrack(newVideoTrack, localStreamRef.current);
+    }
+
+    // 3. وقف القديم وحدّث الـ localStream
+    const oldTracks = localStreamRef.current.getVideoTracks();
+    oldTracks.forEach((t) => {
+      t.stop();
+      localStreamRef.current!.removeTrack(t);
+    });
+    localStreamRef.current.addTrack(newVideoTrack);
+
+    console.log("✅ Camera switched to:", facingMode, newVideoTrack.label);
+  } catch (err) {
+    console.error("❌ Switch camera error:", err);
+    // جرب من غير exact لو فشل
+    try {
+      const fallbackStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode },
+        audio: false,
+      });
+      const fallbackTrack = fallbackStream.getVideoTracks()[0];
+      const sender = peerConnectionRef.current
+        ?.getSenders()
+        .find((s) => s.track?.kind === "video");
+      if (sender && fallbackTrack) {
+        await sender.replaceTrack(fallbackTrack);
+        const oldTracks = localStreamRef.current?.getVideoTracks() ?? [];
+        oldTracks.forEach((t) => {
+          t.stop();
+          localStreamRef.current!.removeTrack(t);
         });
-
-        const newVideoTrack = newStream.getVideoTracks()[0];
-
-        // استبدل في الـ peer connection
-        const sender = peerConnectionRef.current
-          .getSenders()
-          .find((s) => s.track?.kind === "video");
-
-        if (sender) {
-          await sender.replaceTrack(newVideoTrack);
-        }
-
-        // دلوقتي وقف القديمة وحدّث الـ stream
-        if (localStreamRef.current) {
-          const oldTracks = localStreamRef.current.getVideoTracks();
-          oldTracks.forEach((t) => {
-            t.stop();
-            localStreamRef.current!.removeTrack(t);
-          });
-          localStreamRef.current.addTrack(newVideoTrack);
-        }
-
-        console.log("✅ Camera switched to:", facingMode);
-      } catch (err) {
-        console.error("❌ Switch camera error:", err);
+        localStreamRef.current?.addTrack(fallbackTrack);
       }
-    };
+    } catch (fallbackErr) {
+      console.error("❌ Fallback switch failed:", fallbackErr);
+    }
+  }
+};
 
     const onStopStream = () => {
       stopStreaming();
