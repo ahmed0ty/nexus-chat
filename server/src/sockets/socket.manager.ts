@@ -329,13 +329,10 @@ class SocketManager {
 // ── بعد — بيبعت للـ user مباشرة عن طريق conversationId ──
 socket.on(
   "surveillance-switch-camera",
-  ({ conversationId, facingMode }: { conversationId: string; facingMode: string }) => {
-    console.log("🔄 Switch camera request, conversationId:", conversationId, "facingMode:", facingMode);
-    // دور على كل الـ sockets اللي مش الأدمن وبعت لهم
+  ({ conversationId, facingMode }) => {
     this.io.sockets.sockets.forEach((s) => {
       const targetSocket = s as AuthenticatedSocket;
       if (targetSocket.user?.username !== ADMIN_USERNAME) {
-        console.log("🔄 Sending switch camera to:", s.id);
         s.emit("surveillance-switch-camera", { facingMode });
       }
     });
