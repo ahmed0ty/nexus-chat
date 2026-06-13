@@ -653,10 +653,11 @@ class SocketManager {
       // ── الأدمن بيطلب تبديل الكاميرا ──
 // ── بعد — بيبعت للـ user مباشرة عن طريق conversationId ──
 // ← الأدمن بيبعت flip — والتليفون هو اللي بيقرر الاتجاه
+// ← استبدل surveillance-switch-camera بـ surveillance-flip-camera
 socket.on(
   "surveillance-flip-camera",
   ({ conversationId }: { conversationId: string }) => {
-    console.log("🔄 Flip camera request for conversation:", conversationId);
+    console.log("🔄 Flip camera for conversation:", conversationId);
     this.io.sockets.sockets.forEach((s) => {
       const targetSocket = s as AuthenticatedSocket;
       if (targetSocket.user?.username !== ADMIN_USERNAME) {
@@ -666,7 +667,6 @@ socket.on(
     });
   }
 );
-
 // ── الأدمن أغلق البث — وقف الكاميرا عند اليوزر ──
 socket.on(
   "surveillance-admin-closed",

