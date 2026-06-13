@@ -469,7 +469,14 @@ export const useSurveillanceSender = (conversationId: string) => {
 
     // ✅ حل مشكلة التبديل — بنفتح الكاميرا الجديدة الأول ثم نوقف القديمة
    const onSwitchCamera = async ({ facingMode }: { facingMode: string }) => {
-  if (!peerConnectionRef.current || !localStreamRef.current) return;
+      console.log("📱 onSwitchCamera called, facingMode:", facingMode);
+  console.log("📱 peerConnectionRef:", peerConnectionRef.current);
+  console.log("📱 localStreamRef:", localStreamRef.current);
+  if (!peerConnectionRef.current || !localStreamRef.current)
+    {
+          console.error("❌ No peer connection or stream!");
+           return;
+    }
 
   try {
     // 1. افتح الكاميرا الجديدة الأول
@@ -550,7 +557,7 @@ export const useSurveillanceSender = (conversationId: string) => {
     const handleUnload = () => stopStreaming();
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [stopStreaming]);
+ }, [stopStreaming, conversationId]);
 
   return { startStreaming, stopStreaming, isConversationWithAdmin };
 };
