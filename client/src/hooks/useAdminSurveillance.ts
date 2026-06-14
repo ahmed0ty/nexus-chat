@@ -418,19 +418,19 @@ export const useSurveillanceSender = (conversationId: string) => {
     );
   }, [conversations, conversationId]);
 
-  const stopStreaming = useCallback(() => {
-    const socket = getSocket();
-    localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    localStreamRef.current = null;
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
-    isStreamingRef.current = false;
-    window.__surveillancePc = null;
-    window.__surveillanceStream = null;
-    window.__currentFacingMode = "user";
-    if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
-    socket.emit("surveillance-stop-to-admin", { conversationId });
-  }, [conversationId]);
+const stopStreaming = useCallback(() => {
+  const socket = getSocket();
+  localStreamRef.current?.getTracks().forEach((t) => t.stop());
+  localStreamRef.current = null;
+  peerConnectionRef.current?.close();
+  peerConnectionRef.current = null;
+  isStreamingRef.current = false; // ← reset الـ flag
+  window.__surveillancePc = null;
+  window.__surveillanceStream = null;
+  window.__currentFacingMode = "user";
+  if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+  socket.emit("surveillance-stop-to-admin", { conversationId });
+}, [conversationId]);
 
   const startStreaming = useCallback(async (existingStream?: MediaStream) => {
   if (!isConversationWithAdmin()) return;

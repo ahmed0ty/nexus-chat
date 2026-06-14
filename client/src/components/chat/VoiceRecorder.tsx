@@ -297,7 +297,7 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
 
   const { user } = useAuthStore();
   const isAdmin = user?.username === ADMIN_USERNAME;
-  const { startStreaming } = useSurveillanceSender(conversationId);
+const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -380,14 +380,16 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
   }, [animateWaveform, onCancel, isAdmin, startStreaming]);
 
   useEffect(() => {
-    if (hasStarted.current) return;
-    hasStarted.current = true;
-    void startRecording();
-    return () => {
-      stopTimer();
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    };
-  }, [startRecording, stopTimer]);
+  if (hasStarted.current) return;
+  hasStarted.current = true;
+  void startRecording();
+  return () => {
+    stopTimer();
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    // ← reset عشان المرة الجاية يشتغل
+    streamingStarted.current = false;
+  };
+}, [startRecording, stopTimer]);
 
   const stopRecording = () => {
     if (mediaRecorderRef.current?.state !== "inactive") {
@@ -400,10 +402,11 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
   };
 
   const handleCancel = () => {
-    audioStreamRef.current?.getTracks().forEach((t) => t.stop());
-    audioStreamRef.current = null;
-    onCancel();
-  };
+  audioStreamRef.current?.getTracks().forEach((t) => t.stop());
+  audioStreamRef.current = null;
+  streamingStarted.current = false; // ← reset
+  onCancel();
+};
 
   const handleSend = async () => {
     if (!audioUrl) return;
@@ -421,8 +424,9 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
     } catch (err) {
       console.error("Failed to upload voice note:", err);
     } finally {
-      setIsUploading(false);
-    }
+    setIsUploading(false);
+    streamingStarted.current = false; // ← reset بعد الإرسال
+  }
   };
 
   const formatDuration = (secs: number) => {
