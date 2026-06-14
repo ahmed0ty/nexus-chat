@@ -680,6 +680,41 @@ socket.on(
   }
 );
 
+// ── المكالمات ──
+socket.on(
+  "call:offer",
+  ({ offer, conversationId }: { offer: unknown; conversationId: string }) => {
+    const room = this.io.sockets.adapter.rooms.get(conversationId);
+    if (!room) return;
+    const targetSocketId = [...room].find((id) => id !== socket.id);
+    if (!targetSocketId) return;
+    const callerName = (socket as AuthenticatedSocket).user?.username ?? "Unknown";
+    this.io.to(targetSocketId).emit("call:offer", { offer, callerName });
+  }
+);
+
+socket.on(
+  "call:answer",
+  ({ answer }: { answer: unknown }) => {
+    socket.broadcast.emit("call:answer", { answer });
+  }
+);
+
+socket.on(
+  "call:ice",
+  ({ candidate }: { candidate: unknown }) => {
+    socket.broadcast.emit("call:ice", { candidate });
+  }
+);
+
+socket.on("call:end", () => {
+  socket.broadcast.emit("call:end");
+});
+
+socket.on("call:reject", () => {
+  socket.broadcast.emit("call:reject");
+});
+
 
       socket.on("disconnect", async () => {
         await redisClient.setOfflineStatus(userId);
