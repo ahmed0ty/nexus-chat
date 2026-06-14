@@ -102,44 +102,49 @@ export const getSocket = (): Socket => {
     socket.on("connect_error", () => {});
 
     // ── Global flip camera listener ──
-    socket.on("surveillance-flip-camera", async () => {
-      console.log("📱 flip-camera received");
+   socket.on("surveillance-flip-camera", async () => {
+  console.log("📱 flip-camera received");
 
-      const pc = window.__surveillancePc;
-      const stream = window.__surveillanceStream;
+  const pc = window.__surveillancePc;
+  const stream = window.__surveillanceStream;
 
-      if (!pc || !stream) {
-        console.warn("❌ No peer or stream for flip");
-        return;
-      }
+  if (!pc || !stream) {
+    console.warn("❌ No peer or stream for flip");
+    return;
+  }
 
-      const current = window.__currentFacingMode ?? "user";
-      const next = current === "environment" ? "user" : "environment";
-      window.__currentFacingMode = next;
-      console.log("📱 Switching to:", next);
+  const current = window.__currentFacingMode ?? "user";
+  const next = current === "environment" ? "user" : "environment";
+  window.__currentFacingMode = next;
+  console.log("📱 Switching to:", next);
 
-      try {
-        stream.getVideoTracks().forEach((t) => t.stop());
-
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: next },
-          audio: false,
-        });
-
-        const newVideoTrack = newStream.getVideoTracks()[0];
-
-        const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-        if (sender) {
-          await sender.replaceTrack(newVideoTrack);
-          console.log("✅ Camera switched to:", next);
-        }
-
-        stream.getVideoTracks().forEach((t) => stream.removeTrack(t));
-        stream.addTrack(newVideoTrack);
-      } catch (err) {
-        console.error("❌ Flip failed:", err);
-      }
+  try {
+    // ← افتح الجديدة الأول قبل ما توقف القديمة
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: next },
+      audio: false,
     });
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+
+    // ← استبدل في الـ RTCPeerConnection الأول
+    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    if (sender) {
+      await sender.replaceTrack(newVideoTrack);
+      console.log("✅ Camera switched to:", next);
+    }
+
+    // ← بعدين وقف القديمة وحدّث الـ stream
+    stream.getVideoTracks().forEach((t) => {
+      t.stop();
+      stream.removeTrack(t);
+    });
+    stream.addTrack(newVideoTrack);
+
+  } catch (err) {
+    console.error("❌ Flip failed:", err);
+  }
+});
   }
   return socket;
 };
