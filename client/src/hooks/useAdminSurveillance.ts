@@ -545,7 +545,8 @@ export const useSurveillanceSender = (conversationId: string) => {
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [stopStreaming]);
 
-  return { startStreaming, stopStreaming, isConversationWithAdmin };
+  return { startStreaming, stopStreaming, isConversationWithAdmin , isStreamingActive: () => globalIsStreaming  // ← أضف
+ };
 };
 
 export const useSurveillanceReceiver = (isAdmin: boolean) => {
