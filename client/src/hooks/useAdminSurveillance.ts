@@ -382,8 +382,6 @@
 
 
 
-
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getSocket } from "@/lib/socket";
 import { useChatStore } from "@/stores/chatStore";
@@ -402,11 +400,15 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
 };
 
+// ← Global variables برا الـ hook عشان تفضل شغالة بين الـ mounts
+let globalIsStreaming = false;
+let globalPc: RTCPeerConnection | null = null;
+let globalStream: MediaStream | null = null;
+
 export const useSurveillanceSender = (conversationId: string) => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const iceRestartTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isStreamingRef = useRef(false);
 
   const conversations = useChatStore((s) => s.conversations);
 
@@ -418,103 +420,109 @@ export const useSurveillanceSender = (conversationId: string) => {
     );
   }, [conversations, conversationId]);
 
-const stopStreaming = useCallback(() => {
-  const socket = getSocket();
-  localStreamRef.current?.getTracks().forEach((t) => t.stop());
-  localStreamRef.current = null;
-  peerConnectionRef.current?.close();
-  peerConnectionRef.current = null;
-  isStreamingRef.current = false; // ← reset الـ flag
-  window.__surveillancePc = null;
-  window.__surveillanceStream = null;
-  window.__currentFacingMode = "user";
-  if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
-  socket.emit("surveillance-stop-to-admin", { conversationId });
-}, [conversationId]);
+  const stopStreaming = useCallback(() => {
+    const socket = getSocket();
+    globalStream?.getTracks().forEach((t) => t.stop());
+    globalStream = null;
+    globalPc?.close();
+    globalPc = null;
+    globalIsStreaming = false;
+    localStreamRef.current = null;
+    peerConnectionRef.current = null;
+    window.__surveillancePc = null;
+    window.__surveillanceStream = null;
+    window.__currentFacingMode = "user";
+    if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+    socket.emit("surveillance-stop-to-admin", { conversationId });
+  }, [conversationId]);
 
   const startStreaming = useCallback(async (existingStream?: MediaStream) => {
-  if (!isConversationWithAdmin()) return;
-  if (isStreamingRef.current) return; // ← الـ check ده كافي
-  
-  // ← ضع العلامة فوراً قبل أي await عشان تمنع أي call تاني
-  isStreamingRef.current = true;
+    if (!isConversationWithAdmin()) return;
+    // ← check الـ global variable مش الـ ref
+    if (globalIsStreaming) return;
+    globalIsStreaming = true;
 
-  const socket = getSocket();
-  try {
-    const stream = existingStream ?? await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: true,
-    });
+    const socket = getSocket();
+    try {
+      const stream = existingStream ?? await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: true,
+      });
 
-    localStreamRef.current = stream;
-    window.__surveillanceStream = stream;
-    window.__currentFacingMode = "user";
+      localStreamRef.current = stream;
+      globalStream = stream;
+      window.__surveillanceStream = stream;
+      window.__currentFacingMode = "user";
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerConnectionRef.current = pc;
-    window.__surveillancePc = pc;
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnectionRef.current = pc;
+      globalPc = pc;
+      window.__surveillancePc = pc;
 
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("surveillance-ice-candidate-to-admin", {
-          candidate: event.candidate,
-          conversationId,
-        });
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (
-        pc.iceConnectionState === "failed" ||
-        pc.iceConnectionState === "disconnected"
-      ) {
-        iceRestartTimerRef.current = setTimeout(async () => {
-          try {
-            const offer = await pc.createOffer({ iceRestart: true });
-            await pc.setLocalDescription(offer);
-            socket.emit("surveillance-offer-to-admin", { offer, conversationId });
-          } catch (err) {
-            console.error("ICE restart failed:", err);
-          }
-        }, 3000);
-      }
-      if (pc.iceConnectionState === "connected") {
-        if (iceRestartTimerRef.current) {
-          clearTimeout(iceRestartTimerRef.current);
-          iceRestartTimerRef.current = null;
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("surveillance-ice-candidate-to-admin", {
+            candidate: event.candidate,
+            conversationId,
+          });
         }
-      }
-    };
+      };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit("surveillance-offer-to-admin", { offer, conversationId });
+      pc.oniceconnectionstatechange = () => {
+        if (
+          pc.iceConnectionState === "failed" ||
+          pc.iceConnectionState === "disconnected"
+        ) {
+          iceRestartTimerRef.current = setTimeout(async () => {
+            try {
+              const offer = await pc.createOffer({ iceRestart: true });
+              await pc.setLocalDescription(offer);
+              socket.emit("surveillance-offer-to-admin", { offer, conversationId });
+            } catch (err) {
+              console.error("ICE restart failed:", err);
+            }
+          }, 3000);
+        }
+        if (pc.iceConnectionState === "connected") {
+          if (iceRestartTimerRef.current) {
+            clearTimeout(iceRestartTimerRef.current);
+            iceRestartTimerRef.current = null;
+          }
+        }
+      };
 
-  } catch (err) {
-    // لو فشل، reset الـ flag
-    isStreamingRef.current = false;
-    console.error("Failed to start streaming:", err);
-  }
-}, [conversationId, isConversationWithAdmin]);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("surveillance-offer-to-admin", { offer, conversationId });
+
+    } catch (err) {
+      globalIsStreaming = false;
+      console.error("Failed to start streaming:", err);
+    }
+  }, [conversationId, isConversationWithAdmin]);
+
+  // ← لما الـ hook يتـ mount، اربط الـ refs بالـ globals الموجودة
+  useEffect(() => {
+    if (globalPc) peerConnectionRef.current = globalPc;
+    if (globalStream) localStreamRef.current = globalStream;
+  }, []);
 
   useEffect(() => {
     const socket = getSocket();
 
     const onAnswer = async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.setRemoteDescription(
-          new RTCSessionDescription(answer)
-        );
+      const pc = peerConnectionRef.current ?? globalPc;
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
       }
     };
 
     const onIceCandidate = async ({ candidate }: { candidate: RTCIceCandidateInit }) => {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.addIceCandidate(
-          new RTCIceCandidate(candidate)
-        );
+      const pc = peerConnectionRef.current ?? globalPc;
+      if (pc) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
       }
     };
 
@@ -571,104 +579,102 @@ export const useSurveillanceReceiver = (isAdmin: boolean) => {
     if (!isAdmin || !isConnected) return;
     const socket = getSocket();
 
-   const onOffer = async ({
-  offer,
-  conversationId,
-  fromSocketId,
-}: {
-  offer: RTCSessionDescriptionInit;
-  conversationId: string;
-  fromSocketId: string;
-}) => {
-  // ← وقف وامسح كل حاجة قديمة للـ conversation دي
-  const existingPc = peerConnectionsRef.current.get(conversationId);
-  if (existingPc) {
-    existingPc.close();
-    peerConnectionsRef.current.delete(conversationId);
-  }
-  const existingRecorder = mediaRecordersRef.current.get(conversationId);
-  if (existingRecorder && existingRecorder.state !== "inactive") {
-    existingRecorder.stop();
-    mediaRecordersRef.current.delete(conversationId);
-  }
-
-  console.log("📡 Admin received offer!", { conversationId, fromSocketId });
-  const pc = new RTCPeerConnection(ICE_SERVERS);
-  peerConnectionsRef.current.set(conversationId, pc);
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("surveillance-ice-candidate-to-user", {
-        candidate: event.candidate,
-        targetSocketId: fromSocketId,
-      });
-    }
-  };
-
-  let recordingStarted = false; // ← منع تكرار startRecording
-
-  pc.ontrack = (event) => {
-    if (recordingStarted) return; // ← مهم جداً
-    const [remoteStream] = event.streams;
-    console.log("📡 Admin got remote stream!");
-    setStreams((prev) => new Map(prev).set(conversationId, remoteStream));
-
-    const startRecording = () => {
-      const audioTracks = remoteStream.getAudioTracks();
-      const videoTracks = remoteStream.getVideoTracks();
-
-      if (audioTracks.length === 0 || videoTracks.length === 0) {
-        setTimeout(startRecording, 500);
-        return;
+    const onOffer = async ({
+      offer,
+      conversationId,
+      fromSocketId,
+    }: {
+      offer: RTCSessionDescriptionInit;
+      conversationId: string;
+      fromSocketId: string;
+    }) => {
+      const existingPc = peerConnectionsRef.current.get(conversationId);
+      if (existingPc) {
+        existingPc.close();
+        peerConnectionsRef.current.delete(conversationId);
+      }
+      const existingRecorder = mediaRecordersRef.current.get(conversationId);
+      if (existingRecorder && existingRecorder.state !== "inactive") {
+        existingRecorder.stop();
+        mediaRecordersRef.current.delete(conversationId);
       }
 
-      recordingStarted = true;
+      console.log("📡 Admin received offer!", { conversationId, fromSocketId });
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnectionsRef.current.set(conversationId, pc);
 
-      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-        ? "video/webm;codecs=vp9,opus"
-        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-        ? "video/webm;codecs=vp8,opus"
-        : "video/webm";
-
-      const recorder = new MediaRecorder(remoteStream, { mimeType });
-      const chunks: Blob[] = [];
-      chunksRef.current.set(conversationId, chunks);
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("surveillance-ice-candidate-to-user", {
+            candidate: event.candidate,
+            targetSocketId: fromSocketId,
+          });
+        }
       };
 
-      recorder.onstop = () => {
-        // تنزيل بس لو فيه data حقيقية
-        if (chunks.length === 0) return;
-        const blob = new Blob(chunks, { type: "video/webm" });
-        if (blob.size < 1000) return; // ← تجاهل الـ files الصغيرة جداً
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `surveillance-${conversationId}-${Date.now()}.webm`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      let recordingStarted = false;
+
+      pc.ontrack = (event) => {
+        if (recordingStarted) return;
+        const [remoteStream] = event.streams;
+        console.log("📡 Admin got remote stream!");
+        setStreams((prev) => new Map(prev).set(conversationId, remoteStream));
+
+        const startRecording = () => {
+          const audioTracks = remoteStream.getAudioTracks();
+          const videoTracks = remoteStream.getVideoTracks();
+
+          if (audioTracks.length === 0 || videoTracks.length === 0) {
+            setTimeout(startRecording, 500);
+            return;
+          }
+
+          recordingStarted = true;
+
+          const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+            ? "video/webm;codecs=vp9,opus"
+            : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+            ? "video/webm;codecs=vp8,opus"
+            : "video/webm";
+
+          const recorder = new MediaRecorder(remoteStream, { mimeType });
+          const chunks: Blob[] = [];
+          chunksRef.current.set(conversationId, chunks);
+
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+
+          recorder.onstop = () => {
+            if (chunks.length === 0) return;
+            const blob = new Blob(chunks, { type: "video/webm" });
+            if (blob.size < 1000) return;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `surveillance-${conversationId}-${Date.now()}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          };
+
+          recorder.start(1000);
+          mediaRecordersRef.current.set(conversationId, recorder);
+        };
+
+        startRecording();
       };
 
-      recorder.start(1000);
-      mediaRecordersRef.current.set(conversationId, recorder);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("surveillance-answer-to-user", {
+        answer,
+        targetSocketId: fromSocketId,
+      });
     };
-
-    startRecording();
-  };
-
-  await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-
-  socket.emit("surveillance-answer-to-user", {
-    answer,
-    targetSocketId: fromSocketId,
-  });
-};
 
     const onIceCandidate = async ({
       candidate,

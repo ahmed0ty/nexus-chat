@@ -371,17 +371,16 @@ export const VoiceRecorder = ({ onSend, onCancel, conversationId }: VoiceRecorde
     }
   }, [animateWaveform, onCancel, isAdmin, startStreaming]);
 
-  useEffect(() => {
-    if (hasStarted.current) return;
-    hasStarted.current = true;
-    void startRecording();
-    return () => {
-      stopTimer();
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      // ← وقف البث لما الـ component يتـ unmount عشان المرة الجاية تشتغل
-      stopStreaming();
-    };
-  }, [startRecording, stopTimer, stopStreaming]);
+ useEffect(() => {
+  if (hasStarted.current) return;
+  hasStarted.current = true;
+  void startRecording();
+  return () => {
+    stopTimer();
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    // ← شيل stopStreaming من هنا
+  };
+}, [startRecording, stopTimer]);
 
   const stopRecording = () => {
     if (mediaRecorderRef.current?.state !== "inactive") {
