@@ -380,14 +380,14 @@ export default function ChatPage() {
     if (!isAuthenticated) router.replace("/auth/login");
   }, [isAuthenticated, router]);
 
-  useEffect(() => {
-    if (isSupported && permission === "default" && isAuthenticated) {
-      const timer = setTimeout(() => {
-        subscribe();
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [isSupported, permission, subscribe, isAuthenticated]);
+useEffect(() => {
+  if (isSupported && isAuthenticated && (permission === "default" || permission === "granted")) {
+    const timer = setTimeout(() => {
+      subscribe();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }
+}, [isSupported, permission, subscribe, isAuthenticated]);
 
   if (!isAuthenticated) {
     return (
