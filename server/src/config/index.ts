@@ -39,5 +39,10 @@ export const config = {
     url: process.env.LIBRE_TRANSLATE_URL || "https://libretranslate.com",
     key: process.env.LIBRE_TRANSLATE_KEY || "",
   },
+  vapid: {
+    publicKey: requireEnv("VAPID_PUBLIC_KEY"),
+    privateKey: requireEnv("VAPID_PRIVATE_KEY"),
+    subject: process.env.VAPID_SUBJECT || "mailto:admin@nexuschat.com",
+  },
   clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
 } as const;

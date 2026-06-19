@@ -27,6 +27,18 @@ const UserSchema = new Schema<IUserDocument>(
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
     savedMessages: [{ type: Schema.Types.ObjectId, ref: "Message" }],
     refreshTokens: { type: [String], select: false, default: [] },
+pushSubscriptions: {
+  type: [
+    {
+      endpoint: { type: String, required: true },
+      keys: {
+        p256dh: { type: String, required: true },
+        auth: { type: String, required: true },
+      },
+    },
+  ],
+  default: [],
+},
     settings: {
       theme: { type: String, enum: ["light", "dark", "system"], default: "system" },
       language: { type: String, enum: ["ar", "en", "es", "de"], default: "en" },

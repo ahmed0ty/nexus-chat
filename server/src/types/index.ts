@@ -19,8 +19,16 @@ export interface IUser {
   savedMessages: Types.ObjectId[];
   settings: IUserSettings;
   refreshTokens: string[];
+  pushSubscriptions: IPushSubscription[]; // ← أضف ده
   createdAt: Date;
   updatedAt: Date;
+}
+export interface IPushSubscription {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
 }
 
 export type UserStatus = "online" | "offline" | "away" | "dnd";
