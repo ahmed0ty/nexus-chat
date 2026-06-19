@@ -381,11 +381,8 @@ export default function ChatPage() {
   }, [isAuthenticated, router]);
 
 useEffect(() => {
-  if (isSupported && isAuthenticated && (permission === "default" || permission === "granted")) {
-    const timer = setTimeout(() => {
-      subscribe();
-    }, 2000);
-    return () => clearTimeout(timer);
+  if (isSupported && isAuthenticated && permission === "default") {
+    subscribe();
   }
 }, [isSupported, permission, subscribe, isAuthenticated]);
 
