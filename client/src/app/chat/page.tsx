@@ -259,6 +259,7 @@ import api from "@/lib/axios";
 import { LogOut, Settings, MessageCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminSurveillanceStream } from "@/components/chat/AdminSurveillanceStream";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const ChatArea = ({ conversationId, onBack }: { conversationId: string; onBack: () => void }) => {
   const { messages, isLoading, sendMessage, deleteMessage, reactToMessage, fetchNextPage, hasNextPage } = useMessages(conversationId);
@@ -373,9 +374,20 @@ export default function ChatPage() {
 
   useSocket();
 
+  const { isSupported, permission, subscribe } = usePushNotifications();
+
   useEffect(() => {
     if (!isAuthenticated) router.replace("/auth/login");
   }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    if (isSupported && permission === "default" && isAuthenticated) {
+      const timer = setTimeout(() => {
+        subscribe();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSupported, permission, subscribe, isAuthenticated]);
 
   if (!isAuthenticated) {
     return (
