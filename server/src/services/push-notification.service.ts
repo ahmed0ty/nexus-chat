@@ -46,7 +46,6 @@ export const pushNotificationService = {
         )
       );
 
-      // شيل الـ subscriptions اللي ماتت (expired/invalid)
       const deadEndpoints: string[] = [];
       results.forEach((result, i) => {
         if (

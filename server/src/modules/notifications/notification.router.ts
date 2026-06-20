@@ -8,10 +8,13 @@ router.use(authenticate);
 
 router.get("/", notificationController.getNotifications);
 router.get("/unread/count", notificationController.getUnreadCount);
-router.put("/:notificationId/read", notificationController.markAsRead);
 router.put("/read/all", notificationController.markAllAsRead);
-router.delete("/:notificationId", notificationController.deleteNotification);
+
+// ← لازم الـ routes الثابتة (subscribe) تيجي قبل الـ dynamic route (:notificationId)
 router.post("/subscribe", notificationController.savePushSubscription);
 router.delete("/subscribe", notificationController.removePushSubscription);
+
+router.put("/:notificationId/read", notificationController.markAsRead);
+router.delete("/:notificationId", notificationController.deleteNotification);
 
 export default router;
