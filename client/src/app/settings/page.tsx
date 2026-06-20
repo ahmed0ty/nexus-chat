@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import {
   ArrowLeft, Moon, Sun, Monitor,
-  Bell, BellOff, Globe, Shield, LogOut
+  Bell, Shield, LogOut
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { cn } from "@/lib/utils";
 import { Theme, Language } from "@/types";
 import api from "@/lib/axios";
@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { theme, setTheme, language, setLanguage } = useUIStore();
+  const { isSupported, permission, isSubscribed, subscribe, unsubscribe } = usePushNotifications();
 
   useEffect(() => {
     if (!user) router.push("/auth/login");
@@ -47,6 +48,14 @@ export default function SettingsPage() {
     try {
       await api.put("/users/settings", { language: newLang });
     } catch { /* ignore */ }
+  };
+
+  const handleToggleNotifications = async () => {
+    if (isSubscribed) {
+      await unsubscribe();
+    } else {
+      await subscribe();
+    }
   };
 
   const handleLogout = () => {
@@ -130,26 +139,43 @@ export default function SettingsPage() {
         <section>
           <h2 className="text-xs font-medium text-gray-400 uppercase mb-3 px-1">Notifications</h2>
           <div className="bg-gray-800 rounded-2xl overflow-hidden border border-gray-700">
-            {[
-              { label: "Message notifications", icon: <Bell className="w-4 h-4" />, key: "messages" },
-              { label: "Sound", icon: <Bell className="w-4 h-4" />, key: "sound" },
-            ].map((item, i) => (
-              <div
-                key={item.key}
-                className={cn(
-                  "flex items-center justify-between px-4 py-3",
-                  i === 0 ? "border-b border-gray-700" : ""
-                )}
-              >
-                <div className="flex items-center gap-3 text-white text-sm">
-                  <span className="text-gray-400">{item.icon}</span>
-                  {item.label}
-                </div>
-                <div className="w-11 h-6 bg-indigo-600 rounded-full relative cursor-pointer">
-                  <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3 text-white text-sm">
+                <span className="text-gray-400">
+                  <Bell className="w-4 h-4" />
+                </span>
+                <div>
+                  <p>Message notifications</p>
+                  {!isSupported && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Not supported on this browser
+                    </p>
+                  )}
+                  {isSupported && permission === "denied" && (
+                    <p className="text-xs text-red-400 mt-0.5">
+                      Blocked — enable from browser settings
+                    </p>
+                  )}
                 </div>
               </div>
-            ))}
+
+              <button
+                onClick={handleToggleNotifications}
+                disabled={!isSupported || permission === "denied"}
+                className={cn(
+                  "w-11 h-6 rounded-full relative transition-colors flex-shrink-0",
+                  isSubscribed ? "bg-indigo-600" : "bg-gray-600",
+                  (!isSupported || permission === "denied") && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <div
+                  className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                    isSubscribed ? "right-1" : "left-1"
+                  )}
+                />
+              </button>
+            </div>
           </div>
         </section>
 
